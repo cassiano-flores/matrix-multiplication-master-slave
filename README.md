@@ -1,6 +1,6 @@
 # Compile o código com mpicc
 
-mpicc -o matrix_mult matrix_mult.c
+mpicc -o matrix_mult main.c
 
 # Execute o código com mpirun, especificando o número de processos (-np)
 
