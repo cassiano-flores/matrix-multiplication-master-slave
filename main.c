@@ -13,10 +13,11 @@ void escravo(int my_rank, int N);
 int main(int argc, char *argv[])
 {
   int my_rank, proc_n, N;
+  double start_time, end_time;
 
   if (argc != 2)
   {
-    fprintf(stderr, "ERROR! Usage: mpiexec -np <num_processes> matrix_mult <matrix_size>\n");
+    printf("ERROR! Usage: mpiexec -np <num_processes> matrix_mult.exe <matrix_size>\n");
     exit(EXIT_FAILURE);
   }
 
@@ -28,12 +29,13 @@ int main(int argc, char *argv[])
 
   if (my_rank == 0)
   {
+    start_time = MPI_Wtime();
     mestre(proc_n, N);
+    end_time = MPI_Wtime();
+    printf("Execution time: %fs\n", end_time - start_time);
   }
   else
-  {
     escravo(my_rank, N);
-  }
 
   MPI_Finalize();
   return 0;
@@ -56,7 +58,7 @@ void mestre(int proc_n, int N)
     C[i] = calloc(N, sizeof(int));
   }
 
-  // Inicializa as matrizes com valores aleatórios
+  // Inicializa as matrizes com valores aleatórios (entre 1 e 99)
   srand(time(NULL));
   for (i = 0; i < N; i++)
   {
@@ -102,10 +104,39 @@ void mestre(int proc_n, int N)
       linhas_distribuidas++;
     }
     else
-    {
       MPI_Send(result, 0, MPI_INT, status.MPI_SOURCE, TAG_SUICIDE, MPI_COMM_WORLD);
-    }
   }
+
+  // Imprime as matrizes A, B e C
+  /*   printf("Matriz A:\n");
+    for (i = 0; i < N; i++)
+    {
+      for (j = 0; j < N; j++)
+      {
+        printf("%d ", A[i][j]);
+      }
+      printf("\n");
+    }
+
+    printf("Matriz B:\n");
+    for (i = 0; i < N; i++)
+    {
+      for (j = 0; j < N; j++)
+      {
+        printf("%d ", B[i][j]);
+      }
+      printf("\n");
+    }
+
+    printf("Matriz C:\n");
+    for (i = 0; i < N; i++)
+    {
+      for (j = 0; j < N; j++)
+      {
+        printf("%d ", C[i][j]);
+      }
+      printf("\n");
+    } */
 
   // Libera a memória das matrizes
   for (i = 0; i < N; i++)
@@ -127,18 +158,14 @@ void escravo(int my_rank, int N)
     int data[2 * N + 2];
     MPI_Recv(data, 2 * N + 2, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
     if (status.MPI_TAG == TAG_SUICIDE)
-    {
       break;
-    }
 
     int row = data[0];
     int col = data[1];
     int result = 0;
 
     for (int k = 0; k < N; k++)
-    {
       result += data[2 + k] * data[2 + N + k];
-    }
 
     int result_data[3] = {row, col, result};
     MPI_Send(result_data, 3, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
