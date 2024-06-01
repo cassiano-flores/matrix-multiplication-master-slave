@@ -2,8 +2,6 @@
 
 mpicc -o matrix_mult main.c
 
-# Execute o código com mpirun, especificando o número de processos (-np)
+# Execute o código com mpiexec, especificando o número de processos
 
-# Aqui usamos 4 processos (1 mestre e 3 escravos)
-
-mpiexec -np 4 ./matrix_mult
+mpiexec -np <num_processes> matrix_mult <matrix_size>

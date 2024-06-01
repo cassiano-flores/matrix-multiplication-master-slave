@@ -1,137 +1,146 @@
 #include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
-#define N 3 // Tamanho das matrizes (para simplicidade, usamos matrizes quadradas)
+#define TAG_WORK 1
+#define TAG_RESULT 2
+#define TAG_SUICIDE 3
 
-// Função para imprimir matrizes
-void print_matrix(int matrix[N][N])
-{
-  for (int i = 0; i < N; i++)
-  {
-    for (int j = 0; j < N; j++)
-    {
-      printf("%d ", matrix[i][j]);
-    }
-    printf("\n");
-  }
-}
+void mestre(int proc_n, int N);
+void escravo(int my_rank, int N);
 
 int main(int argc, char *argv[])
 {
-  int my_rank, proc_n;
-  MPI_Status status;
+  int my_rank, proc_n, N;
 
-  // Inicializa o MPI
+  if (argc != 2)
+  {
+    fprintf(stderr, "ERROR! Usage: mpiexec -np <num_processes> matrix_mult <matrix_size>\n");
+    exit(EXIT_FAILURE);
+  }
+
+  N = atoi(argv[1]);
+
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &proc_n);
 
-  // Matrizes e vetores de trabalho
-  int A[N][N], B[N][N], C[N][N];
-
   if (my_rank == 0)
   {
-    int choice;
-    printf("Do you want to insert the matrices or use the example model? \n1. Insert matrices \n2. Use example\n");
-    fflush(stdout); // Garante que o printf seja exibido imediatamente
-    scanf("%d", &choice);
-
-    if (choice == 1)
-    {
-      // Solicita ao usuário para inserir os valores das matrizes
-      printf("Enter the matrices with size: %dx%d in the format: 'a11 a12 ... a1%d a21 a22 ... a2%d ... a%d%d b11 b12 ... b1%d b21 b22 ... b2%d ... b%d%d'\n", N, N, N, N, N, N, N, N, N, N);
-      fflush(stdout); // Garante que o printf seja exibido imediatamente
-      for (int i = 0; i < N; i++)
-      {
-        for (int j = 0; j < N; j++)
-        {
-          scanf("%d", &A[i][j]);
-        }
-      }
-      for (int i = 0; i < N; i++)
-      {
-        for (int j = 0; j < N; j++)
-        {
-          scanf("%d", &B[i][j]);
-        }
-      }
-    }
-    else
-    {
-      // Inicializa as matrizes A e B com valores de exemplo
-      for (int i = 0; i < N; i++)
-      {
-        for (int j = 0; j < N; j++)
-        {
-          A[i][j] = i + j;
-          B[i][j] = i * j;
-        }
-      }
-    }
-
-    // Imprime as matrizes A e B
-    printf("Matrix A:\n");
-    print_matrix(A);
-    printf("Matrix B:\n");
-    print_matrix(B);
-
-    // Envia a matriz B para todos os escravos
-    for (int i = 1; i < proc_n; i++)
-    {
-      MPI_Send(&B, N * N, MPI_INT, i, 0, MPI_COMM_WORLD);
-    }
-
-    // Distribui linhas de A para os escravos
-    for (int i = 0; i < N; i++)
-    {
-      int dest = (i % (proc_n - 1)) + 1;
-      MPI_Send(A[i], N, MPI_INT, dest, i, MPI_COMM_WORLD);
-    }
-
-    // Recebe linhas calculadas de C dos escravos
-    for (int i = 0; i < N; i++)
-    {
-      MPI_Recv(C[i], N, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-      printf("Master received row %d from process %d\n", status.MPI_TAG, status.MPI_SOURCE);
-      fflush(stdout); // Garante que o printf seja exibido imediatamente
-    }
-
-    // Imprime a matriz resultante C
-    printf("Matrix C (Result of A * B):\n");
-    print_matrix(C);
+    mestre(proc_n, N);
   }
   else
   {
-    // Papel dos escravos
-    // Recebe a matriz B
-    MPI_Recv(&B, N * N, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
-    printf("Process %d received matrix B\n", my_rank);
-    fflush(stdout); // Garante que o printf seja exibido imediatamente
+    escravo(my_rank, N);
+  }
 
-    for (int i = my_rank - 1; i < N; i += (proc_n - 1))
+  MPI_Finalize();
+  return 0;
+}
+
+void mestre(int proc_n, int N)
+{
+  int i, j;
+  int **A, **B, **C;
+  MPI_Status status;
+
+  // Aloca as matrizes
+  A = malloc(N * sizeof(int *));
+  B = malloc(N * sizeof(int *));
+  C = malloc(N * sizeof(int *));
+  for (i = 0; i < N; i++)
+  {
+    A[i] = malloc(N * sizeof(int));
+    B[i] = malloc(N * sizeof(int));
+    C[i] = calloc(N, sizeof(int));
+  }
+
+  // Inicializa as matrizes com valores aleatórios
+  srand(time(NULL));
+  for (i = 0; i < N; i++)
+  {
+    for (j = 0; j < N; j++)
     {
-      int row[N];
-      MPI_Recv(row, N, MPI_INT, 0, i, MPI_COMM_WORLD, &status);
-      printf("Process %d received row %d\n", my_rank, i);
-      fflush(stdout); // Garante que o printf seja exibido imediatamente
-
-      int result[N];
-      for (int j = 0; j < N; j++)
-      {
-        result[j] = 0;
-        for (int k = 0; k < N; k++)
-        {
-          result[j] += row[k] * B[k][j];
-        }
-      }
-      MPI_Send(result, N, MPI_INT, 0, i, MPI_COMM_WORLD);
-      printf("Process %d sent result for row %d\n", my_rank, i);
-      fflush(stdout); // Garante que o printf seja exibido imediatamente
+      A[i][j] = rand() % 99 + 1;
+      B[i][j] = rand() % 99 + 1;
     }
   }
 
-  // Finaliza o MPI
-  MPI_Finalize();
-  return 0;
+  int linhas_distribuidas = 0;
+  for (i = 1; i < proc_n && linhas_distribuidas < N * N; i++)
+  {
+    int data[2 * N + 2];
+    data[0] = linhas_distribuidas / N;
+    data[1] = linhas_distribuidas % N;
+    for (j = 0; j < N; j++)
+    {
+      data[2 + j] = A[data[0]][j];
+      data[2 + N + j] = B[j][data[1]];
+    }
+    MPI_Send(data, 2 * N + 2, MPI_INT, i, TAG_WORK, MPI_COMM_WORLD);
+    linhas_distribuidas++;
+  }
+
+  for (i = 0; i < N * N; i++)
+  {
+    int result[3];
+    MPI_Recv(result, 3, MPI_INT, MPI_ANY_SOURCE, TAG_RESULT, MPI_COMM_WORLD, &status);
+    C[result[0]][result[1]] = result[2];
+
+    if (linhas_distribuidas < N * N)
+    {
+      int data[2 * N + 2];
+      data[0] = linhas_distribuidas / N;
+      data[1] = linhas_distribuidas % N;
+      for (j = 0; j < N; j++)
+      {
+        data[2 + j] = A[data[0]][j];
+        data[2 + N + j] = B[j][data[1]];
+      }
+      MPI_Send(data, 2 * N + 2, MPI_INT, status.MPI_SOURCE, TAG_WORK, MPI_COMM_WORLD);
+      linhas_distribuidas++;
+    }
+    else
+    {
+      MPI_Send(result, 0, MPI_INT, status.MPI_SOURCE, TAG_SUICIDE, MPI_COMM_WORLD);
+    }
+  }
+
+  // Libera a memória das matrizes
+  for (i = 0; i < N; i++)
+  {
+    free(A[i]);
+    free(B[i]);
+    free(C[i]);
+  }
+  free(A);
+  free(B);
+  free(C);
+}
+
+void escravo(int my_rank, int N)
+{
+  MPI_Status status;
+  while (1)
+  {
+    int data[2 * N + 2];
+    MPI_Recv(data, 2 * N + 2, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+    if (status.MPI_TAG == TAG_SUICIDE)
+    {
+      break;
+    }
+
+    int row = data[0];
+    int col = data[1];
+    int result = 0;
+
+    for (int k = 0; k < N; k++)
+    {
+      result += data[2 + k] * data[2 + N + k];
+    }
+
+    int result_data[3] = {row, col, result};
+    MPI_Send(result_data, 3, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
+  }
 }
