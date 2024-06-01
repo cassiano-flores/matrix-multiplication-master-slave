@@ -6,4 +6,4 @@ mpicc -o matrix_mult main.c
 
 # Aqui usamos 4 processos (1 mestre e 3 escravos)
 
-mpirun -np 4 ./matrix_mult
+mpiexec -np 4 ./matrix_mult
