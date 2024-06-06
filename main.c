@@ -27,6 +27,7 @@ int main(int argc, char *argv[])
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &proc_n);
 
+  // se for o primeiro processo, ele será o mestre
   if (my_rank == 0)
   {
     start_time = MPI_Wtime();
@@ -35,19 +36,20 @@ int main(int argc, char *argv[])
     printf("Execution time: %fs\n", end_time - start_time);
   }
   else
-    escravo(my_rank, N);
+    escravo(my_rank, N); // todos demais são escravos
 
   MPI_Finalize();
   return 0;
 }
 
+// método do mestre, responsável por todo o gerenciamento de envio e recebimento
 void mestre(int proc_n, int N)
 {
   int i, j;
   int **A, **B, **C;
   MPI_Status status;
 
-  // Aloca as matrizes
+  // aloca as matrizes
   A = malloc(N * sizeof(int *));
   B = malloc(N * sizeof(int *));
   C = malloc(N * sizeof(int *));
@@ -58,7 +60,7 @@ void mestre(int proc_n, int N)
     C[i] = calloc(N, sizeof(int));
   }
 
-  // Inicializa as matrizes com valores aleatórios (entre 1 e 99)
+  // inicializa as matrizes com valores aleatórios (entre 1 e 99)
   srand(time(NULL));
   for (i = 0; i < N; i++)
   {
@@ -69,6 +71,7 @@ void mestre(int proc_n, int N)
     }
   }
 
+  // distribui as linhas da matriz A e as colunas da matriz B para os escravos
   int linhas_distribuidas = 0;
   for (i = 1; i < proc_n && linhas_distribuidas < N * N; i++)
   {
@@ -80,16 +83,19 @@ void mestre(int proc_n, int N)
       data[2 + j] = A[data[0]][j];
       data[2 + N + j] = B[j][data[1]];
     }
+    // envia os dados para o escravo
     MPI_Send(data, 2 * N + 2, MPI_INT, i, TAG_WORK, MPI_COMM_WORLD);
     linhas_distribuidas++;
   }
 
+  // recebe os resultados dos escravos e atualiza a matriz C (resultado da multiplicação)
   for (i = 0; i < N * N; i++)
   {
     int result[3];
     MPI_Recv(result, 3, MPI_INT, MPI_ANY_SOURCE, TAG_RESULT, MPI_COMM_WORLD, &status);
     C[result[0]][result[1]] = result[2];
 
+    // envia mais trabalho para o escravo que terminou, se ainda houver trabalho
     if (linhas_distribuidas < N * N)
     {
       int data[2 * N + 2];
@@ -104,10 +110,11 @@ void mestre(int proc_n, int N)
       linhas_distribuidas++;
     }
     else
+      // se não houver mais trabalho, envia um sinal para o escravo terminar
       MPI_Send(result, 0, MPI_INT, status.MPI_SOURCE, TAG_SUICIDE, MPI_COMM_WORLD);
   }
 
-  // Imprime as matrizes A, B e C
+  // caso queira ver os valores gerados, basta descomentar, imprime as matrizes A, B e C
   /*   printf("Matriz A:\n");
     for (i = 0; i < N; i++)
     {
@@ -138,7 +145,6 @@ void mestre(int proc_n, int N)
       printf("\n");
     } */
 
-  // Libera a memória das matrizes
   for (i = 0; i < N; i++)
   {
     free(A[i]);
@@ -150,6 +156,7 @@ void mestre(int proc_n, int N)
   free(C);
 }
 
+// método do escravo, apenas recebe linha e coluna, trabalha, resolve
 void escravo(int my_rank, int N)
 {
   MPI_Status status;
@@ -157,6 +164,7 @@ void escravo(int my_rank, int N)
   {
     int data[2 * N + 2];
     MPI_Recv(data, 2 * N + 2, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+    // quando receber sinal de término, encerra
     if (status.MPI_TAG == TAG_SUICIDE)
       break;
 
@@ -164,10 +172,12 @@ void escravo(int my_rank, int N)
     int col = data[1];
     int result = 0;
 
+    // trabalho
     for (int k = 0; k < N; k++)
       result += data[2 + k] * data[2 + N + k];
 
     int result_data[3] = {row, col, result};
+    // envia o resultado
     MPI_Send(result_data, 3, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
   }
 }
